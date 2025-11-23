@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zimmerei Baustellen-Rechnung (offline + Belege + EÜR + Bautagebuch)</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#111111">
+
+  <style>
+    body { font-family: system-ui, Arial; margin: 12px; background:#f6f6f6; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    h2 { font-size: 16px; margin: 0 0 6px; }
+    .card { background:white; border-radius:12px; padding:12px; margin:10px 0;
+            box-shadow:0 2px 8px rgba(0,0,0,.06); }
+    label { font-size: 12px; color:#333; display:block; margin-top:8px; }
+    input, textarea, select { width:100%; padding:8px; border:1px solid #ccc;
+            border-radius:8px; font-size:14px; }
+    button { padding:9px 11px; border:0; border-radius:10px; font-size:14px;
+            cursor:pointer; margin-top:8px; }
+    .btn { background:#111; color:#fff; }
+    .btn2 { background:#eee; }
+    .btn3 { background:#f4f4f4; border:1px solid #ddd; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; }
+    .row > * { flex:1; min-width:120px; }
+    .pill { background:#f2f2f2; border-radius:999px; padding:6px 10px; font-size:13px; }
+    .muted { color:#666; font-size:12px; }
+    .list { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+    .item { padding:8px; background:#fafafa; border:1px solid #eee; border-radius:8px; }
+    .item strong { display:block; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; }
+    th, td { border-bottom:1px solid #eee; padding:6px; font-size:13px; text-align:left; vertical-align:top; }
+    .right { text-align:right; }
+    .tiny { font-size:11px; color:#777; }
+    details summary { cursor:pointer; font-weight:600; }
+    .thumb { max-width:100px; max-height:100px; border-radius:6px; border:1px solid #ddd; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <h1>Baustellen-Rechnung (offline)</h1>
+
+  <!-- ===== Firmendaten ===== -->
+  <div class="card">
+    <h2>Deine Firmendaten</h2>
+    <label>Firma / Name</label>
+    <input id="myName" placeholder="Zimmerei Mustermann" />
+    <label>Adresse</label>
+    <textarea id="myAddr" rows="2" placeholder="Straße, PLZ Ort"></textarea>
+
+    <div class="row">
+      <div>
+        <label>Steuernummer / USt-IdNr</label>
+        <input id="myTax" placeholder="123/456/78901 oder DE..." />
+      </div>
+      <div>
+        <label>IBAN</label>
+        <input id="myIban" placeholder="DE.." />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Standard-Stundensatz netto (€)</label>
+        <input id="hourlyRate" type="number" step="0.01" value="70">
+      </div>
+      <div>
+        <label>Fahrt-Preis pro km netto (€)</label>
+        <input id="kmRate" type="number" step="0.01" value="0.95">
+      </div>
+    </div>
+
+    <label>Hinweis (optional)</label>
+    <input id="myNote" placeholder="Zahlbar innerhalb von 14 Tagen ohne Abzug." />
+
+    <button class="btn" onclick="saveMyData()">Speichern</button>
+    <div class="muted" id="saveHint"></div>
+  </div>
+
+
+  <!-- ===== Kunden / Projekte ===== -->
+  <div class="card">
+    <h2>Kunde auswählen / neu anlegen</h2>
+
+    <label>Suche Kunde</label>
+    <input id="customerSearch" placeholder="Tippe Namen..." oninput="renderCustomerList()" />
+
+    <div class="list" id="customerList"></div>
+
+    <details style="margin-top:8px;">
+      <summary>+ Neuen Kunden anlegen</summary>
+      <label>Name</label>
+      <input id="newCName" placeholder="Max Mustermann" />
+      <label>Adresse</label>
+      <textarea id="newCAddr" rows="2"></textarea>
+      <button class="btn2" onclick="addCustomer()">Kunde speichern</button>
+    </details>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:10px 0;">
+
+    <h2>Baustelle / Projekt</h2>
+    <label>Projekt auswählen</label>
+    <select id="projectSelect" onchange="selectProject(this.value)"></select>
+
+    <div class="row">
+      <button class="btn2" onclick="useProjectToInvoice()">Projekt in Rechnung übernehmen</button>
+      <button class="btn3" onclick="deleteProject()">Projekt löschen</button>
+    </div>
+
+    <details style="margin-top:8px;">
+      <summary>+ Neues Projekt (zum ausgewählten Kunden)</summary>
+      <label>Projektname</label>
+      <input id="newPName" placeholder="Dachstuhl Müller, Musterstraße 1" />
+      <label>Notizen</label>
+      <textarea id="newPNote" rows="2"></textarea>
+      <button class="btn2" onclick="addProject()">Projekt speichern</button>
+      <div class="tiny">Projekt wird beim aktuell ausgewählten Kunden gespeichert.</div>
+    </details>
+  </div>
+
+
+  <!-- ===== Rechnungsdaten ===== -->
+  <div class="card">
+    <h2>Rechnungsdaten</h2>
+    <label>Kunde / Privatkunde</label>
+    <input id="cName" placeholder="(wird aus Liste befüllt)" />
+    <label>Adresse</label>
+    <textarea id="cAddr" rows="2"></textarea>
+
+    <div class="row">
+      <div>
+        <label>Rechnungsdatum</label>
+        <input id="invDate" type="date"/>
+      </div>
+      <div>
+        <label>Rechnungsnummer</label>
+        <input id="invNo" placeholder="2025-001" />
+      </div>
+    </div>
+
+    <label>MwSt.-Satz</label>
+    <select id="vatRate">
+      <option value="19" selected>19 % (Standard)</option>
+      <option value="7">7 % (ermäßigt)</option>
+      <option value="0">0 % (steuerfrei / §13b / o.ä.)</option>
+    </select>
+
+    <label>Projekt/Baustelle (Text in Rechnung)</label>
+    <input id="projectName" placeholder="optional" />
+    <label>Projekt-Notiz</label>
+    <textarea id="projectNote" rows="2" placeholder="optional"></textarea>
+  </div>
+
+
+  <!-- ===== Favoriten editierbar ===== -->
+  <div class="card">
+    <h2>Favoriten (1 Klick)</h2>
+    <div class="row" id="favButtons"></div>
+
+    <details style="margin-top:8px;">
+      <summary>Favoriten bearbeiten</summary>
+      <div id="favEditor"></div>
+
+      <hr style="border:none;border-top:1px solid #eee;margin:8px 0;">
+      <strong>+ Neuer Favorit</strong>
+      <div class="row">
+        <input id="favNewDesc" placeholder="Bezeichnung" />
+        <input id="favNewQty" type="number" step="0.01" value="1" placeholder="Menge" />
+        <input id="favNewUnit" placeholder="Einheit (h/km/Stk)" />
+        <input id="favNewPrice" type="number" step="0.01" value="0" placeholder="Preis netto" />
+      </div>
+      <button class="btn2" onclick="addFavorite()">Favorit hinzufügen</button>
+    </details>
+  </div>
+
+
+  <!-- ===== Timer ===== -->
+  <div class="card">
+    <h2>Arbeitszeit-Timer</h2>
+    <div class="row">
+      <div class="pill">Läuft seit: <span id="timerSince">–</span></div>
+      <div class="pill">Dauer: <span id="timerDur">0:00</span></div>
+    </div>
+
+    <div class="row">
+      <button class="btn" onclick="startTimer()">Start</button>
+      <button class="btn2" onclick="pauseTimer()">Pause</button>
+      <button class="btn" onclick="stopTimer()">Stop → als Position</button>
+    </div>
+
+    <label>Timer-Notiz (optional)</label>
+    <input id="timerNote" placeholder="z.B. Abbund, Aufrichten, Nacharbeit" />
+    <div class="muted">Rundet auf 15-Minuten-Takt.</div>
+  </div>
+
+
+  <!-- ===== Positionen ===== -->
+  <div class="card">
+    <h2>Leistungen / Material</h2>
+    <div class="row">
+      <div>
+        <label>Bezeichnung</label>
+        <input id="itemDesc" placeholder="Arbeitszeit / KVH / OSB / Fahrt" />
+      </div>
+      <div>
+        <label>Menge</label>
+        <input id="itemQty" type="number" step="0.01" value="1" />
+      </div>
+      <div>
+        <label>Einheit</label>
+        <input id="itemUnit" placeholder="h / Stk / m / km" />
+      </div>
+      <div>
+        <label>Einzelpreis netto (€)</label>
+        <input id="itemPrice" type="number" step="0.01" value="0" />
+      </div>
+    </div>
+
+    <button onclick="addItem()">+ Position hinzufügen</button>
+
+    <table id="itemsTable">
+      <thead>
+        <tr>
+          <th>Bezeichnung</th><th class="right">Menge</th><th>Einheit</th>
+          <th class="right">Preis netto</th><th class="right">Summe netto</th><th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="row">
+      <div>
+        <label>Rabatt / Nachlass netto (€)</label>
+        <input id="discount" type="number" step="0.01" value="0" />
+      </div>
+      <div>
+        <label>Anzahlung brutto (€)</label>
+        <input id="deposit" type="number" step="0.01" value="0" />
+      </div>
+    </div>
+
+    <button class="btn2" onclick="saveInvoice()">Zwischenspeichern</button>
+  </div>
+
+
+  <!-- ===== Belege / Ausgaben ===== -->
+  <div class="card">
+    <h2>Belege / Ausgaben (EÜR)</h2>
+
+    <label>Belegfoto (Kamera/Galerie)</label>
+    <input id="expPhoto" type="file" accept="image/*" capture="environment" onchange="handlePhoto(this.files[0])">
+    <div class="tiny" id="photoHint">Optional, aber praktisch für Nachweise.</div>
+
+    <div class="row">
+      <div>
+        <label>Datum</label>
+        <input id="expDate" type="date">
+      </div>
+      <div>
+        <label>Betrag brutto (€)</label>
+        <input id="expGross" type="number" step="0.01" value="0">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>MwSt.-Satz</label>
+        <select id="expVat">
+          <option value="19" selected>19 %</option>
+          <option value="7">7 %</option>
+          <option value="0">0 %</option>
+        </select>
+      </div>
+      <div>
+        <label>Kategorie</label>
+        <select id="expCat">
+          <option>Material</option>
+          <option>Werkzeug/Maschinen</option>
+          <option>Tanken/Fahrt</option>
+          <option>Gerüst/Kran</option>
+          <option>Subunternehmer</option>
+          <option>Sonstiges</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Lieferant / Laden</label>
+    <input id="expVendor" placeholder="z.B. Baustoffhandel XY">
+
+    <label>Notiz</label>
+    <input id="expNote" placeholder="z.B. Sparren 10/20, Schrauben">
+
+    <button class="btn" onclick="addExpense()">Ausgabe speichern</button>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:10px 0;">
+    <div class="list" id="expenseList"></div>
+    <div class="muted" id="expenseEmpty"></div>
+  </div>
+
+
+  <!-- ===== Bautagebuch ===== -->
+  <div class="card">
+    <h2>Bautagebuch (zum Projekt)</h2>
+    <label>Foto/Video (optional)</label>
+    <input id="logPhoto" type="file" accept="image/*,video/*" capture="environment" onchange="handleLogPhoto(this.files[0])">
+    <label>Notiz</label>
+    <input id="logText" placeholder="z.B. Sparren gesetzt, Wetterpause, Lieferung fehlte">
+    <button class="btn2" onclick="addLogEntry()">Eintrag speichern</button>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:10px 0;">
+    <div class="list" id="logList"></div>
+    <div class="muted" id="logEmpty"></div>
+  </div>
+
+
+  <!-- ===== Backup / Restore ===== -->
+  <div class="card">
+    <h2>Backup / Wiederherstellen</h2>
+    <div class="row">
+      <button class="btn2" onclick="exportBackup()">Backup-Datei speichern</button>
+      <label class="btn3" style="display:flex;align-items:center;justify-content:center;">
+        Backup laden
+        <input type="file" accept="application/json" style="display:none" onchange="importBackup(this.files[0])">
+      </label>
+    </div>
+    <div class="muted">Tipp: 1× pro Woche Backup exportieren (besonders auf iPhone).</div>
+  </div>
+
+
+  <!-- ===== Export ===== -->
+  <div class="card">
+    <h2>Export</h2>
+    <button class="btn" onclick="generatePDF()">PDF-Rechnung erstellen (Einnahme wird gespeichert)</button>
+
+    <hr style="border:none;border-top:1px solid #eee;margin:10px 0;">
+
+    <label>EÜR-Monat wählen</label>
+    <input id="eurMonth" type="month">
+
+    <div class="row">
+      <button class="btn2" onclick="exportEurCsv()">EÜR-CSV exportieren</button>
+      <button class="btn3" onclick="resetEurData()">EÜR-Daten löschen (nur wenn nötig)</button>
+    </div>
+
+    <button class="btn2" onclick="clearAll()">Alles in App löschen</button>
+    <div class="muted">CSV kannst du an den Steuerberater schicken.</div>
+  </div>
+
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script>
+    const LS_KEY = "zimmermann_invoice_v6";
+
+    /*
+      DB:
+      {
+        my:{...},
+        inv:{...},
+        customers:[...],
+        projects:[...],
+        favorites:[...],
+        timer:{...},
+        invoices:[{id, invNo, date, customer, project, net, vat, gross}],
+        expenses:[{id, date, vendor, category, gross, net, vat, vatRate, note, customerId, projectId, photoDataUrl?}],
+        logs:[{id, projectId, date, text, photoDataUrl?}],
+        selectedCustomerId, selectedProjectId
+      }
+    */
+
+    let items = [];
+    let customers = [];
+    let projects = [];
+    let favorites = [];
+    let invoices = [];
+    let expenses = [];
+    let logs = [];
+    let selectedCustomerId = null;
+    let selectedProjectId = null;
+
+    function loadDB(){ return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
+    function saveDB(d){ localStorage.setItem(LS_KEY, JSON.stringify(d)); }
+    function uid(){ return Math.random().toString(36).slice(2,10); }
+
+    function euro(n){
+      const x = (Math.round(n*100)/100).toFixed(2);
+      return x.replace(".", ",") + " €";
+    }
+
+    function ensureDefaults(d){
+      d.customers ||= [];
+      d.projects  ||= [];
+      d.invoices  ||= [];
+      d.expenses  ||= [];
+      d.logs      ||= [];
+      d.favorites ||= [
+        {id:uid(), desc:"Arbeitszeit Zimmerer", qty:1, unit:"h", price:0, autoType:"hour"},
+        {id:uid(), desc:"Fahrt", qty:10, unit:"km", price:0, autoType:"km"},
+        {id:uid(), desc:"KVH / BSH (pauschal)", qty:1, unit:"Stk", price:120},
+        {id:uid(), desc:"OSB / Platten (pauschal)", qty:1, unit:"Stk", price:45},
+        {id:uid(), desc:"Kleinteile / Schrauben", qty:1, unit:"Psch", price:25}
+      ];
+      return d;
+    }
+
+    // ===== Firmendaten =====
+    function saveMyData(){
+      const d = ensureDefaults(loadDB());
+      d.my = {
+        name: myName.value.trim(),
+        addr: myAddr.value.trim(),
+        tax:  myTax.value.trim(),
+        iban: myIban.value.trim(),
+        note: myNote.value.trim(),
+        hourlyRate: parseFloat(hourlyRate.value||"0"),
+        kmRate: parseFloat(kmRate.value||"0")
+      };
+      saveDB(d);
+      saveHint.textContent = "Gespeichert ✓";
+      setTimeout(()=>saveHint.textContent="", 1500);
+      renderFavorites(); renderFavEditor();
+    }
+
+    // ===== Kunden =====
+    function addCustomer(){
+      const name = newCName.value.trim();
+      if(!name) return alert("Bitte Namen eingeben.");
+      const addr = newCAddr.value.trim();
+      const d = ensureDefaults(loadDB());
+      d.customers.push({id:uid(), name, addr});
+      saveDB(d);
+      newCName.value=""; newCAddr.value="";
+      loadAll();
+      alert("Kunde gespeichert.");
+    }
+
+    function renderCustomerList(){
+      const q = customerSearch.value.trim().toLowerCase();
+      customerList.innerHTML = "";
+      customers.filter(c => !q || c.name.toLowerCase().includes(q))
+        .forEach(c=>{
+          const div=document.createElement("div");
+          div.className="item";
+          div.innerHTML = `<strong>${c.name}</strong><div class="tiny">${(c.addr||"").replace(/\n/g," · ")}</div>`;
+          div.onclick=()=>selectCustomer(c.id);
+          customerList.appendChild(div);
+        });
+      if(!customers.length){
+        customerList.innerHTML = `<div class="muted">Noch keine Kunden gespeichert.</div>`;
+      }
+    }
+
+    function selectCustomer(id){
+      selectedCustomerId = id;
+      const c = customers.find(x=>x.id===id);
+      if(!c) return;
+      cName.value = c.name;
+      cAddr.value = c.addr || "";
+      renderProjectSelect();
+      saveSelection();
+      renderLogs();
+    }
+
+    function saveSelection(){
+      const d = ensureDefaults(loadDB());
+      d.selectedCustomerId = selectedCustomerId;
+      d.selectedProjectId = selectedProjectId;
+      saveDB(d);
+    }
+
+    // ===== Projekte =====
+    function addProject(){
+      if(!selectedCustomerId) return alert("Bitte zuerst einen Kunden auswählen.");
+      const name = newPName.value.trim();
+      if(!name) return alert("Projektname fehlt.");
+      const note = newPNote.value.trim();
+      const d = ensureDefaults(loadDB());
+      d.projects.push({id:uid(), customerId:selectedCustomerId, name, note});
+      saveDB(d);
+      newPName.value=""; newPNote.value="";
+      loadAll();
+      alert("Projekt gespeichert.");
+    }
+
+    function renderProjectSelect(){
+      projectSelect.innerHTML = "";
+      const opts = projects.filter(p=>p.customerId===selectedCustomerId);
+      const emptyOpt = document.createElement("option");
+      emptyOpt.value="";
+      emptyOpt.textContent = opts.length ? "Projekt wählen..." : "Keine Projekte";
+      projectSelect.appendChild(emptyOpt);
+
+      opts.forEach(p=>{
+        const o=document.createElement("option");
+        o.value=p.id; o.textContent=p.name;
+        projectSelect.appendChild(o);
+      });
+
+      projectSelect.value = selectedProjectId || "";
+    }
+
+    function selectProject(id){
+      selectedProjectId = id || null;
+      saveSelection();
+      renderLogs();
+    }
+
+    function useProjectToInvoice(){
+      if(!selectedProjectId) return alert("Bitte Projekt auswählen.");
+      const p = projects.find(x=>x.id===selectedProjectId);
+      if(!p) return;
+      projectName.value = p.name;
+      projectNote.value = p.note || "";
+      saveInvoice();
+      alert("Projekt in Rechnung übernommen.");
+    }
+
+    function deleteProject(){
+      if(!selectedProjectId) return alert("Kein Projekt ausgewählt.");
+      if(!confirm("Projekt wirklich löschen?")) return;
+      const d = ensureDefaults(loadDB());
+      d.projects = d.projects.filter(p=>p.id!==selectedProjectId);
+      selectedProjectId=null;
+      saveDB(d);
+      loadAll();
+    }
+
+    // ===== Favoriten =====
+    function autoPriceFor(f){
+      const hr = parseFloat(hourlyRate.value||"0");
+      const km = parseFloat(kmRate.value||"0");
+      if(f.autoType==="hour") return hr;
+      if(f.autoType==="km") return km;
+      return f.price;
+    }
+
+    function renderFavorites(){
+      favButtons.innerHTML = "";
+      favorites.forEach(f=>{
+        const price = autoPriceFor(f);
+        const b=document.createElement("button");
+        b.className="btn2";
+        b.textContent = `${f.desc} (${euro(price)}/${f.unit})`;
+        b.onclick=()=>{
+          items.push({desc:f.desc, qty:f.qty, unit:f.unit, price});
+          renderItems();
+        };
+        favButtons.appendChild(b);
+      });
+    }
+
+    function renderFavEditor(){
+      favEditor.innerHTML = "";
+      favorites.forEach((f,idx)=>{
+        const wrap=document.createElement("div");
+        wrap.className="item";
+        const price = autoPriceFor(f);
+        wrap.innerHTML = `
+          <div class="row">
+            <input value="${f.desc}" data-k="desc" data-i="${idx}">
+            <input type="number" step="0.01" value="${f.qty}" data-k="qty" data-i="${idx}">
+            <input value="${f.unit}" data-k="unit" data-i="${idx}">
+            <input type="number" step="0.01" value="${price}" data-k="price" data-i="${idx}">
+          </div>
+          <div class="row">
+            <select data-k="autoType" data-i="${idx}">
+              <option value="" ${!f.autoType?"selected":""}>Fixpreis</option>
+              <option value="hour" ${f.autoType==="hour"?"selected":""}>Auto: Stundensatz</option>
+              <option value="km" ${f.autoType==="km"?"selected":""}>Auto: km-Preis</option>
+            </select>
+            <button class="btn3" data-act="del" data-i="${idx}">Löschen</button>
+          </div>
+        `;
+        favEditor.appendChild(wrap);
+      });
+
+      favEditor.querySelectorAll("input,select").forEach(el=>{
+        el.onchange=()=>{
+          const i = parseInt(el.dataset.i,10);
+          const k = el.dataset.k;
+          if(k==="qty"||k==="price") favorites[i][k]=parseFloat(el.value||"0");
+          else favorites[i][k]=el.value;
+          favorites[i].autoType = favorites[i].autoType || "";
+          persistFavorites();
+          renderFavorites();
+        };
+      });
+
+      favEditor.querySelectorAll("button[data-act='del']").forEach(btn=>{
+        btn.onclick=()=>{
+          const i=parseInt(btn.dataset.i,10);
+          favorites.splice(i,1);
+          persistFavorites();
+          renderFavEditor();
+          renderFavorites();
+        };
+      });
+    }
+
+    function addFavorite(){
+      const desc=favNewDesc.value.trim();
+      const qty=parseFloat(favNewQty.value||"1");
+      const unit=favNewUnit.value.trim();
+      const price=parseFloat(favNewPrice.value||"0");
+      if(!desc||!unit) return alert("Bezeichnung + Einheit eingeben.");
+      favorites.push({id:uid(), desc, qty, unit, price});
+      favNewDesc.value=""; favNewQty.value=1; favNewUnit.value=""; favNewPrice.value=0;
+      persistFavorites();
+      renderFavEditor();
+      renderFavorites();
+    }
+
+    function persistFavorites(){
+      const d = ensureDefaults(loadDB());
+      d.favorites = favorites; saveDB(d);
+    }
+
+    // ===== Timer =====
+    let timer = { start:null, running:false, elapsedMs:0 };
+
+    function loadTimer(d){
+      if(d.timer) timer = d.timer;
+      updateTimerUI();
+      if(timer.running) requestAnimationFrame(tick);
+    }
+
+    function startTimer(){
+      if(timer.running) return;
+      timer.running = true;
+      timer.start = Date.now();
+      saveTimer();
+      requestAnimationFrame(tick);
+      updateTimerUI();
+    }
+
+    function pauseTimer(){
+      if(!timer.running) return;
+      timer.elapsedMs += Date.now() - timer.start;
+      timer.running=false; timer.start=null;
+      saveTimer(); updateTimerUI();
+    }
+
+    function stopTimer(){
+      if(timer.running) pauseTimer();
+      const hoursRaw = timer.elapsedMs / (1000*60*60);
+      if(hoursRaw <= 0.001) return alert("Timer war zu kurz.");
+      const hoursRounded = Math.round(hoursRaw * 4) / 4; // 15 min
+      const hr = parseFloat(hourlyRate.value||"0");
+      const desc = "Arbeitszeit Zimmerer" + (timerNote.value.trim() ? " – " + timerNote.value.trim() : "");
+      items.push({desc, qty: hoursRounded, unit:"h", price: hr});
+      renderItems();
+      timer = { start:null, running:false, elapsedMs:0 };
+      timerNote.value="";
+      saveTimer(); updateTimerUI();
+    }
+
+    function tick(){
+      if(!timer.running) return;
+      updateTimerUI();
+      requestAnimationFrame(tick);
+    }
+
+    function updateTimerUI(){
+      timerSince.textContent = timer.running ? new Date(timer.start).toLocaleTimeString() : "–";
+      const ms = timer.elapsedMs + (timer.running ? Date.now()-timer.start : 0);
+      const totalMin = Math.floor(ms/60000);
+      const h = Math.floor(totalMin/60);
+      const m = totalMin%60;
+      timerDur.textContent = `${h}:${String(m).padStart(2,"0")}`;
+    }
+
+    function saveTimer(){
+      const d = ensureDefaults(loadDB());
+      d.timer = timer; saveDB(d);
+    }
+
+    // ===== Positionen =====
+    function addItem(){
+      const desc = itemDesc.value.trim();
+      const qty  = parseFloat(itemQty.value || "0");
+      const unit = itemUnit.value.trim();
+      const price= parseFloat(itemPrice.value || "0");
+      if(!desc || qty<=0) return alert("Bitte Bezeichnung und Menge eingeben.");
+      items.push({desc, qty, unit, price});
+      itemDesc.value=""; itemQty.value=1; itemUnit.value=""; itemPrice.value=0;
+      renderItems();
+    }
+
+    function removeItem(i){ items.splice(i,1); renderItems(); }
+
+    function renderItems(){
+      const tbody = itemsTable.querySelector("tbody");
+      tbody.innerHTML = "";
+      items.forEach((it,i)=>{
+        const sum = it.qty*it.price;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${it.desc}</td>
+          <td class="right">${it.qty}</td>
+          <td>${it.unit}</td>
+          <td class="right">${euro(it.price)}</td>
+          <td class="right">${euro(sum)}</td>
+          <td><button onclick="removeItem(${i})">x</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function calcTotals(){
+      const subtotalNet = items.reduce((a,it)=>a+it.qty*it.price,0);
+      const discNet = parseFloat(discount.value||"0");
+      const vat = parseFloat(vatRate.value||"0")/100;
+
+      const netAfterDisc = Math.max(0, subtotalNet - discNet);
+      const vatAmount = netAfterDisc * vat;
+      const grossBeforeDeposit = netAfterDisc + vatAmount;
+
+      const depGross  = parseFloat(deposit.value||"0");
+      const grossTotal = Math.max(0, grossBeforeDeposit - depGross);
+
+      return {subtotalNet, discNet, netAfterDisc, vat, vatAmount, grossBeforeDeposit, depGross, grossTotal};
+    }
+
+    function saveInvoice(){
+      const d = ensureDefaults(loadDB());
+      d.inv = {
+        cName: cName.value.trim(),
+        cAddr: cAddr.value.trim(),
+        invDate: invDate.value,
+        invNo: invNo.value.trim(),
+        vatRate: vatRate.value,
+        discount: parseFloat(discount.value||"0"),
+        deposit: parseFloat(deposit.value||"0"),
+        projectName: projectName.value.trim(),
+        projectNote: projectNote.value.trim(),
+        items
+      };
+      d.timer = timer;
+      saveDB(d);
+      alert("Zwischengespeichert (offline).");
+    }
+
+    // ===== Belege / Ausgaben =====
+    let currentPhotoDataUrl = null;
+
+    function handlePhoto(file){
+      if(!file){ currentPhotoDataUrl=null; return; }
+      const reader = new FileReader();
+      reader.onload = (e)=>{ currentPhotoDataUrl = e.target.result; };
+      reader.readAsDataURL(file);
+      photoHint.textContent = "Foto geladen ✓";
+    }
+
+    function splitGrossToNetVat(gross, vatRatePct){
+      const r = vatRatePct/100;
+      if(r<=0) return {net:gross, vat:0};
+      const net = gross/(1+r);
+      const vat = gross-net;
+      return {net, vat};
+    }
+
+    function addExpense(){
+      const gross = parseFloat(expGross.value||"0");
+      const vatPct = parseFloat(expVat.value||"0");
+      if(gross<=0) return alert("Betrag fehlt.");
+
+      const date = expDate.value || new Date().toISOString().slice(0,10);
+      const vendor = expVendor.value.trim();
+      const category = expCat.value;
+      const note = expNote.value.trim();
+
+      const s = splitGrossToNetVat(gross, vatPct);
+
+      const d = ensureDefaults(loadDB());
+      d.expenses.push({
+        id:uid(),
+        date, vendor, category,
+        gross, net:s.net, vat:s.vat, vatRate:vatPct,
+        note,
+        customerId:selectedCustomerId,
+        projectId:selectedProjectId,
+        photoDataUrl: currentPhotoDataUrl || null
+      });
+      saveDB(d);
+
+      expGross.value=0; expVendor.value=""; expNote.value="";
+      currentPhotoDataUrl=null; expPhoto.value="";
+      photoHint.textContent="Optional, aber praktisch für Nachweise.";
+      loadAll();
+      alert("Ausgabe gespeichert.");
+    }
+
+    function renderExpenses(){
+      expenseList.innerHTML="";
+      const exps = expenses.slice().sort((a,b)=>a.date<b.date?1:-1);
+      if(!exps.length){
+        expenseEmpty.textContent="Noch keine Ausgaben gespeichert.";
+        return;
+      }
+      expenseEmpty.textContent="";
+      exps.forEach(e=>{
+        const div=document.createElement("div");
+        div.className="item";
+        const img = e.photoDataUrl ? `<img class="thumb" src="${e.photoDataUrl}">` : "";
+        div.innerHTML=`
+          <div class="row">
+            <div>
+              <strong>${e.category}</strong>
+              <div class="tiny">${e.date} · ${e.vendor||"—"} · MwSt ${e.vatRate}%</div>
+              <div>${e.note||""}</div>
+            </div>
+            <div class="right">
+              <div><strong>${euro(e.gross)}</strong></div>
+              <div class="tiny">netto ${euro(e.net)} · MwSt ${euro(e.vat)}</div>
+              <button class="btn3" onclick="deleteExpense('${e.id}')">Löschen</button>
+            </div>
+          </div>
+          ${img}
+        `;
+        expenseList.appendChild(div);
+      });
+    }
+
+    function deleteExpense(id){
+      const d = ensureDefaults(loadDB());
+      d.expenses = d.expenses.filter(x=>x.id!==id);
+      saveDB(d);
+      loadAll();
+    }
+
+    // ===== Bautagebuch =====
+    let currentLogPhoto = null;
+
+    function handleLogPhoto(file){
+      if(!file){ currentLogPhoto=null; return; }
+      const r = new FileReader();
+      r.onload = e => currentLogPhoto = e.target.result;
+      r.readAsDataURL(file);
+    }
+
+    function addLogEntry(){
+      if(!selectedProjectId) return alert("Bitte zuerst ein Projekt auswählen.");
+      const text = logText.value.trim();
+      if(!text && !currentLogPhoto) return alert("Notiz oder Foto nötig.");
+
+      const d = ensureDefaults(loadDB());
+      d.logs.push({
+        id: uid(),
+        projectId: selectedProjectId,
+        date: new Date().toISOString(),
+        text,
+        photoDataUrl: currentLogPhoto
+      });
+      saveDB(d);
+
+      logText.value=""; logPhoto.value=""; currentLogPhoto=null;
+      loadAll();
+    }
+
+    function renderLogs(){
+      logList.innerHTML="";
+      const d = ensureDefaults(loadDB());
+      const list = d.logs.filter(l=>l.projectId===selectedProjectId)
+        .sort((a,b)=>a.date<b.date?1:-1);
+
+      if(!selectedProjectId){
+        logEmpty.textContent="Projekt auswählen, dann erscheinen die Einträge.";
+        return;
+      }
+      if(!list.length){
+        logEmpty.textContent="Noch keine Einträge.";
+        return;
+      }
+      logEmpty.textContent="";
+
+      list.forEach(l=>{
+        const div=document.createElement("div");
+        div.className="item";
+        const img = l.photoDataUrl ? `<img class="thumb" src="${l.photoDataUrl}">` : "";
+        div.innerHTML=`
+          <strong>${new Date(l.date).toLocaleString()}</strong>
+          <div>${l.text||""}</div>
+          ${img}
+          <button class="btn3" onclick="deleteLog('${l.id}')">Löschen</button>
+        `;
+        logList.appendChild(div);
+      });
+    }
+
+    function deleteLog(id){
+      const d = ensureDefaults(loadDB());
+      d.logs = d.logs.filter(x=>x.id!==id);
+      saveDB(d);
+      loadAll();
+    }
+
+    // ===== Backup / Restore =====
+    function exportBackup(){
+      const d = ensureDefaults(loadDB());
+      const blob = new Blob([JSON.stringify(d,null,2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url;
+      a.download=`Zimmerei_Backup_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function importBackup(file){
+      if(!file) return;
+      const r = new FileReader();
+      r.onload = e=>{
+        try{
+          const data = JSON.parse(e.target.result);
+          saveDB(ensureDefaults(data));
+          alert("Backup geladen ✓");
+          location.reload();
+        }catch(err){
+          alert("Backup ungültig.");
+        }
+      };
+      r.readAsText(file);
+    }
+
+    // ===== EÜR Export =====
+    function exportEurCsv(){
+      const monthVal = eurMonth.value;
+      if(!monthVal) return alert("Bitte Monat wählen.");
+      const [yy,mm] = monthVal.split("-").map(x=>parseInt(x,10));
+
+      const inc = invoices.filter(i=>{
+        const dt = new Date(i.date);
+        return dt.getFullYear()===yy && (dt.getMonth()+1)===mm;
+      });
+      const exp = expenses.filter(e=>{
+        const dt = new Date(e.date);
+        return dt.getFullYear()===yy && (dt.getMonth()+1)===mm;
+      });
+
+      let rows = [];
+      rows.push(["Datum","Typ","Partner","Kategorie","Netto","MwSt","Brutto","Rechnungsnr./Beleg","Notiz"].join(";"));
+
+      inc.forEach(i=>{
+        rows.push([
+          i.date,"Einnahme",i.customer||"", "Umsatz",
+          i.net.toFixed(2).replace(".",","),
+          i.vat.toFixed(2).replace(".",","),
+          i.gross.toFixed(2).replace(".",","),
+          i.invNo||"",
+          (i.project||"")
+        ].join(";"));
+      });
+
+      exp.forEach(e=>{
+        rows.push([
+          e.date,"Ausgabe",e.vendor||"", e.category||"",
+          e.net.toFixed(2).replace(".",","),
+          e.vat.toFixed(2).replace(".",","),
+          e.gross.toFixed(2).replace(".",","),
+          "Beleg",
+          e.note||""
+        ].join(";"));
+      });
+
+      const csv = rows.join("\n");
+      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `EÜR_${yy}-${String(mm).padStart(2,"0")}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function resetEurData(){
+      if(!confirm("Wirklich alle gespeicherten Einnahmen & Ausgaben löschen?")) return;
+      const d = ensureDefaults(loadDB());
+      d.invoices=[]; d.expenses=[];
+      saveDB(d); loadAll();
+    }
+
+    // ===== PDF + Einnahmen speichern =====
+    async function generatePDF(){
+      saveInvoice(); saveMyData();
+      const d = ensureDefaults(loadDB());
+      if(!d.my || !d.inv) return alert("Bitte Firmendaten und Rechnung ausfüllen.");
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      const my = d.my, inv = d.inv;
+      const t = calcTotals();
+
+      // Einnahme automatisch speichern
+      d.invoices.push({
+        id:uid(),
+        invNo: inv.invNo,
+        date: inv.invDate,
+        customer: inv.cName,
+        project: inv.projectName,
+        net: t.netAfterDisc,
+        vat: t.vatAmount,
+        gross: t.grossTotal
+      });
+      saveDB(d);
+      invoices = d.invoices;
+
+      let y=12;
+      doc.setFontSize(12);
+      doc.text(my.name, 12, y); y+=5;
+      doc.setFontSize(10);
+      my.addr.split("\n").forEach(line=>{ doc.text(line, 12, y); y+=4; });
+      y+=2;
+      doc.text("Steuernr./USt-IdNr: " + my.tax, 12, y); y+=4;
+      doc.text("IBAN: " + my.iban, 12, y); y+=6;
+
+      doc.setFontSize(12);
+      doc.text("Rechnung", 150, 12);
+      doc.setFontSize(10);
+      doc.text("Nr.: " + inv.invNo, 150, 17);
+      doc.text("Datum: " + inv.invDate, 150, 22);
+
+      y=34;
+      if(inv.projectName){
+        doc.setFontSize(10);
+        doc.text("Projekt/Baustelle: " + inv.projectName, 12, y); y+=5;
+      }
+      if(inv.projectNote){
+        doc.setFontSize(9);
+        doc.text(inv.projectNote.slice(0,90), 12, y); y+=5;
+      }
+
+      y+=2;
+      doc.setFontSize(11);
+      doc.text("Rechnung an:", 12, y); y+=5;
+      doc.setFontSize(10);
+      doc.text(inv.cName, 12, y); y+=4;
+      inv.cAddr.split("\n").forEach(line=>{ doc.text(line, 12, y); y+=4; });
+
+      y+=6;
+      doc.setFontSize(10);
+      doc.text("Pos.",12,y); doc.text("Leistung",22,y); doc.text("Menge",120,y);
+      doc.text("Preis netto",150,y,{align:"right"}); doc.text("Summe netto",198,y,{align:"right"});
+      y+=3; doc.line(12,y,198,y); y+=5;
+
+      inv.items.forEach((it,idx)=>{
+        const sum = it.qty*it.price;
+        doc.text(String(idx+1),12,y);
+        doc.text(it.desc.slice(0,60),22,y);
+        doc.text(String(it.qty)+" "+it.unit,120,y);
+        doc.text(euro(it.price),150,y,{align:"right"});
+        doc.text(euro(sum),198,y,{align:"right"});
+        y+=6;
+        if(y>270){ doc.addPage(); y=20; }
+      });
+
+      y+=2; doc.line(12,y,198,y); y+=6;
+
+      doc.text("Zwischensumme netto:",150,y,{align:"right"});
+      doc.text(euro(t.subtotalNet),198,y,{align:"right"}); y+=5;
+
+      if(t.discNet>0){
+        doc.text("Rabatt/Nachlass netto:",150,y,{align:"right"});
+        doc.text("- "+euro(t.discNet),198,y,{align:"right"}); y+=5;
+      }
+
+      doc.text(`Netto nach Abzug:`,150,y,{align:"right"});
+      doc.text(euro(t.netAfterDisc),198,y,{align:"right"}); y+=5;
+
+      doc.text(`+ MwSt. (${(t.vat*100).toFixed(0)} %):`,150,y,{align:"right"});
+      doc.text(euro(t.vatAmount),198,y,{align:"right"}); y+=5;
+
+      doc.setFontSize(11);
+      doc.text("Brutto:",150,y,{align:"right"});
+      doc.text(euro(t.grossBeforeDeposit),198,y,{align:"right"}); y+=6;
+
+      doc.setFontSize(10);
+      if(t.depGross>0){
+        doc.text("Anzahlung brutto:",150,y,{align:"right"});
+        doc.text("- "+euro(t.depGross),198,y,{align:"right"}); y+=5;
+      }
+
+      doc.setFontSize(12);
+      doc.text("Rechnungsbetrag brutto:",150,y,{align:"right"});
+      doc.text(euro(t.grossTotal),198,y,{align:"right"}); y+=8;
+
+      doc.setFontSize(9);
+      if(my.note) doc.text(my.note,12,y);
+
+      const filename = (inv.invNo || "rechnung") + ".pdf";
+      doc.save(filename);
+    }
+
+    function clearAll(){
+      if(!confirm("Wirklich alles in der App löschen?")) return;
+      localStorage.removeItem(LS_KEY);
+      items=[]; 
+      timer = { start:null, running:false, elapsedMs:0 };
+      location.reload();
+    }
+
+    // ===== Load Everything =====
+    function loadAll(){
+      const d = ensureDefaults(loadDB());
+
+      if(d.my){
+        myName.value = d.my.name || "";
+        myAddr.value = d.my.addr || "";
+        myTax.value  = d.my.tax  || "";
+        myIban.value = d.my.iban || "";
+        myNote.value = d.my.note || "";
+        hourlyRate.value = d.my.hourlyRate ?? 70;
+        kmRate.value = d.my.kmRate ?? 0.95;
+      }
+
+      if(d.inv){
+        cName.value = d.inv.cName || "";
+        cAddr.value = d.inv.cAddr || "";
+        invDate.value = d.inv.invDate || new Date().toISOString().slice(0,10);
+        invNo.value = d.inv.invNo || "";
+        vatRate.value = d.inv.vatRate ?? "19";
+        discount.value = d.inv.discount || 0;
+        deposit.value = d.inv.deposit || 0;
+        projectName.value = d.inv.projectName || "";
+        projectNote.value = d.inv.projectNote || "";
+        items = d.inv.items || [];
+        renderItems();
+      } else {
+        invDate.value = new Date().toISOString().slice(0,10);
+      }
+
+      customers = d.customers;
+      projects  = d.projects;
+      favorites = d.favorites;
+      invoices  = d.invoices;
+      expenses  = d.expenses;
+      logs      = d.logs;
+
+      selectedCustomerId = d.selectedCustomerId || null;
+      selectedProjectId  = d.selectedProjectId || null;
+
+      renderCustomerList();
+      if(selectedCustomerId){
+        const c = customers.find(x=>x.id===selectedCustomerId);
+        if(c){ cName.value=c.name; cAddr.value=c.addr||""; }
+      }
+      renderProjectSelect();
+      renderFavorites();
+      renderFavEditor();
+      loadTimer(d);
+      renderExpenses();
+      renderLogs();
+
+      expDate.value ||= new Date().toISOString().slice(0,10);
+      eurMonth.value ||= new Date().toISOString().slice(0,7);
+    }
+
+    loadAll();
+  </script>
+
+  <!-- Service Worker Registrierung -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js");
+    }
+  </script>
+</body>
+</html>
